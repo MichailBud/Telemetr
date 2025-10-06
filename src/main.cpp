@@ -99,9 +99,32 @@ void usart_setup(void)
     usart_set_mode(USART2, USART_MODE_TX_RX);
     usart_set_parity(USART2, USART_PARITY_NONE);
     usart_set_flow_control(USART2, USART_FLOWCONTROL_NONE);
+
+    //активируем перрывания по приёму данных в UART2
+  	usart_enable_rx_interrupt(USART2);
     
     // Включаем USART2
     usart_enable(USART2);
+}
+
+void nvic_setup(void)
+{
+    // Включаем прерывание USART2 в контроллере прерываний (NVIC)
+    nvic_enable_irq(NVIC_USART2_IRQ);
+    // Устанавливаем приоритет прерывания (меньше число - выше приоритет)
+    nvic_set_priority(NVIC_USART2_IRQ, 0);
+}
+
+void usart2_isr(void)
+{
+    if (((USART_CR1(USART2) & USART_CR1_RXNEIE) != 0) &&
+	    ((USART_SR(USART2) & USART_SR_RXNE) != 0)) {
+	
+		// Чтение USART_DR автоматически очищает флаг USART_SR_RXNE
+		b.put( static_cast<uint8_t>(usart_recv(USART2)));
+		//активировать прерывание по готовности передатчика UART 
+	}
+
 }
 
 void uart3_write(uint8_t* data, const uint32_t length ){
@@ -116,7 +139,7 @@ int main(void)
     gpio_setup();
     usart_setup();
     systick_setup();
-
+    nvic_setup();
     
 
     uint8_t str[6];
@@ -137,32 +160,40 @@ int main(void)
 
 	// uint8_t str2_tx[]={0xC1, 0xC1, 0xC1};
 	// uart1_write(str2_tx,3);
+
+    gpio_clear(GPIOA, GPIO0);
+	gpio_clear(GPIOA, GPIO1);
+
+    delay_ms(200);
     
     while (1) {
-		//если индексы чтения и записи в кольцевом буфере совпадают
-		if(!b.empty()){
-			// usart_send_blocking(USART2,b.get());
-			byte_data = b.get();//временно, по сути ничё не делает(надо изменить настройки класса)
-			// usart_send_blocking(USART2,' ');
-			// itoa(b.count,data_amount,10);
-			// usart_send_blocking(USART2,data_amount[0]);
+        uint8_t str_tx[]={65, 66, 67, 68, 69, 70};
+        uart2_write(str_tx,6);
+        delay_ms(200);
+		// //если индексы чтения и записи в кольцевом буфере совпадают
+		// if(!b.empty()){
+		// 	// usart_send_blocking(USART2,b.get());
+		// 	byte_data = b.get();//временно, по сути ничё не делает(надо изменить настройки класса)
+		// 	// usart_send_blocking(USART2,' ');
+		// 	// itoa(b.count,data_amount,10);
+		// 	// usart_send_blocking(USART2,data_amount[0]);
 			
-			//если в буфере накопилось 6 байт 
-			if(b.count>=6){
-				for(int i=0; i<6; ++i){
-					str[i]=b.buf[6-b.wr_idx+i];//тут есть беда: если я начну записывать с конца буфера и перейду в начало, то...
-				}
-				for(int i=0; i<6; ++i){
-					usart_send_blocking(USART3,str[i]);
-				}
-				b.wr_idx =0;
-				b.rd_idx =0;
-				b.full_ = false;
-				gpio_clear(GPIOA, GPIO0);
-				gpio_clear(GPIOA, GPIO1);
-				// usart_send_blocking(USART1,'/n');
-            }
-        }
+		// 	//если в буфере накопилось 6 байт 
+		// 	if(b.count>=6){
+		// 		for(int i=0; i<6; ++i){
+		// 			str[i]=b.buf[6-b.wr_idx+i];//тут есть беда: если я начну записывать с конца буфера и перейду в начало, то...
+		// 		}
+		// 		for(int i=0; i<6; ++i){
+		// 			usart_send_blocking(USART3,str[i]);
+		// 		}
+		// 		b.wr_idx =0;
+		// 		b.rd_idx =0;
+		// 		b.full_ = false;
+		// 		gpio_clear(GPIOA, GPIO0);
+		// 		gpio_clear(GPIOA, GPIO1);
+		// 		// usart_send_blocking(USART1,'/n');
+        //     }
+        // }
     }
     
     return 0;
