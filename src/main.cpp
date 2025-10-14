@@ -1,15 +1,22 @@
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/usart.h>
+#include <libopencm3/stm32/spi.h>
 
 #include "E32_dop.cpp"
 
 #include <libopencm3/cm3/systick.h>
 #include <libopencm3/cm3/vector.h>
 
+enum State{
+    idle,
+    data_receive,
+    finish
+};
 
 uint8_t data_buffer;	
 Circular_buffer b;
+Circular_buffer b_spi;
 
 volatile uint32_t tiks = 0;
 
@@ -52,7 +59,7 @@ void clock_setup(void)
     rcc_periph_clock_enable(RCC_GPIOB);
     rcc_periph_clock_enable(RCC_USART3);
     rcc_periph_clock_enable(RCC_USART2);
-
+    rcc_periph_clock_enable(RCC_SPI2);
 }
 
 void gpio_setup(void)
@@ -77,6 +84,20 @@ void gpio_setup(void)
     
     gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO3);
     gpio_set_af(GPIOA, GPIO_AF7, GPIO3); 
+
+    // SPI2 на выводах PB13, PB14, PB15
+    // PB13 - SCK, PB14 - MISO, PB15 - MOSI
+    
+    // Настройка выводов SPI в альтернативный режим
+    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_NONE, 
+                   GPIO13 | GPIO14 | GPIO15);
+    
+    // Установка альтернативной функции SPI2 (AF5)
+    gpio_set_af(GPIOB, GPIO_AF5, GPIO13 | GPIO14 | GPIO15);
+
+        // Дополнительно: вывод для NSS (выбор ведомого) - PB12
+    gpio_mode_setup(GPIOB, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO12);
+    gpio_set(GPIOB, GPIO12); // Установить высокий уровень (ведомый не выбран)
 }
 
 void usart_setup(void)
@@ -107,21 +128,85 @@ void usart_setup(void)
     usart_enable(USART2);
 }
 
+// Настройка SPI2
+void spi2_setup(void)
+{
+    // Сброс и инициализация SPI2
+    spi_disable(SPI2);
+    
+    // Базовая настройка SPI
+    spi_init_master(SPI2,
+                   SPI_CR1_BAUDRATE_FPCLK_DIV_32,    // Предделитель (42MHz/32 = ~1.3MHz)
+                   SPI_CR1_CPOL_CLK_TO_0_WHEN_IDLE,  // Полярность: низкий уровень в idle
+                   SPI_CR1_CPHA_CLK_TRANSITION_1,    // Фаза: данные захватываются по первому фронту
+                   SPI_CR1_DFF_8BIT,                 // 8-битный формат данных
+                   SPI_CR1_MSBFIRST);                // Старший бит первый
+    
+    // Дополнительные настройки
+    spi_set_full_duplex_mode(SPI2);                  // Полнодуплексный режим
+    spi_enable_software_slave_management(SPI2);      // Программное управление NSS
+    spi_set_nss_high(SPI2);                          // NSS всегда высокий
+    
+    // Включаем SPI
+    spi_enable(SPI2);
+
+    // Включаем прерывания (опционально)
+    spi_enable_rx_buffer_not_empty_interrupt(SPI2);
+
+    // Регистрируем обработчик прерывания в NVIC
+    nvic_enable_irq(NVIC_SPI2_IRQ);
+}
+
+void spi2_isr(void)
+{
+    // Проверяем флаг приема данных
+    if (SPI_SR(SPI2) & SPI_SR_RXNE) {
+        uint8_t received_data = spi_read(SPI2);
+        usart_send_blocking(USART2, received_data);
+        b_spi.put(received_data);
+    }
+}
+// Функция для передачи данных через SPI2
+uint8_t spi2_transfer()
+{
+    
+    // Ждем приема данных
+    while (!(SPI_SR(SPI2) & SPI_SR_RXNE));
+    
+    // Читаем принятые данные
+    return static_cast<uint8_t>(spi_read(SPI2));
+}
+
+void spi2_select_slave(void)
+{
+    gpio_clear(GPIOB, GPIO12); // NSS низкий уровень
+}
+
+// Функция для освобождения ведомого устройства
+void spi2_deselect_slave(void)
+{
+    gpio_set(GPIOB, GPIO12); // NSS высокий уровень
+}
+
 void nvic_setup(void)
 {
     // Включаем прерывание USART2 в контроллере прерываний (NVIC)
     nvic_enable_irq(NVIC_USART2_IRQ);
     // Устанавливаем приоритет прерывания (меньше число - выше приоритет)
     nvic_set_priority(NVIC_USART2_IRQ, 0);
+
+    // Включаем прерывание SPI2 (с более низким приоритетом)
+    nvic_enable_irq(NVIC_SPI2_IRQ);
+    nvic_set_priority(NVIC_SPI2_IRQ, 1);
 }
 
 void usart2_isr(void)
 {
     if (((USART_CR1(USART2) & USART_CR1_RXNEIE) != 0) &&
 	    ((USART_SR(USART2) & USART_SR_RXNE) != 0)) {
-	
+        
 		// Чтение USART_DR автоматически очищает флаг USART_SR_RXNE
-		b.put( static_cast<uint8_t>(usart_recv(USART2)));
+        usart_send_blocking(USART3,usart_recv(USART2));
 		//активировать прерывание по готовности передатчика UART 
 	}
 
@@ -133,67 +218,84 @@ void uart3_write(uint8_t* data, const uint32_t length ){
 	}
 }
 
-int main(void)
-{
-    clock_setup();
-    gpio_setup();
-    usart_setup();
-    systick_setup();
-    nvic_setup();
-    
-
-    uint8_t str[6];
-	uint8_t byte_data;
-
-	gpio_set(GPIOA, GPIO0);
+void config_radiomodule(void){
+    gpio_set(GPIOA, GPIO0);
 	gpio_set(GPIOA, GPIO1);
     
-    delay_ms(2000);
-
-	uint8_t str_tx[]={0xC0,0x00,0x00,0x1A,0x06,0x44};
-    //usart_send_blocking(USART1, 'B');
-    uart2_write(str_tx,6);
-
     delay_ms(200);
 
+	uint8_t str_tx[]={0xC0,0x00,0x00,0x1A,0x06,0x44}; // Настройка для радиомодуля
+    uart2_write(str_tx,6); // Записываем конфигурацию в радиомодуль
 
-
-	// uint8_t str2_tx[]={0xC1, 0xC1, 0xC1};
-	// uart1_write(str2_tx,3);
+    delay_ms(200);
 
     gpio_clear(GPIOA, GPIO0);
 	gpio_clear(GPIOA, GPIO1);
 
     delay_ms(200);
+
+}
+
+int main(void)
+{
+    clock_setup();
+    gpio_setup();
+    usart_setup();
+    spi2_setup();
+    systick_setup();
+    nvic_setup();
+
+    config_radiomodule();
+	
+    State state = idle;
     
     while (1) {
-        uint8_t str_tx[]={65, 66, 67, 68, 69, 70};
-        uart2_write(str_tx,6);
-        delay_ms(200);
-		// //если индексы чтения и записи в кольцевом буфере совпадают
-		// if(!b.empty()){
-		// 	// usart_send_blocking(USART2,b.get());
-		// 	byte_data = b.get();//временно, по сути ничё не делает(надо изменить настройки класса)
-		// 	// usart_send_blocking(USART2,' ');
-		// 	// itoa(b.count,data_amount,10);
-		// 	// usart_send_blocking(USART2,data_amount[0]);
-			
-		// 	//если в буфере накопилось 6 байт 
-		// 	if(b.count>=6){
-		// 		for(int i=0; i<6; ++i){
-		// 			str[i]=b.buf[6-b.wr_idx+i];//тут есть беда: если я начну записывать с конца буфера и перейду в начало, то...
-		// 		}
-		// 		for(int i=0; i<6; ++i){
-		// 			usart_send_blocking(USART3,str[i]);
-		// 		}
-		// 		b.wr_idx =0;
-		// 		b.rd_idx =0;
-		// 		b.full_ = false;
-		// 		gpio_clear(GPIOA, GPIO0);
-		// 		gpio_clear(GPIOA, GPIO1);
-		// 		// usart_send_blocking(USART1,'/n');
-        //     }
+        
+
+        // usart_send_blocking(USART2,'1'); 
+
+        spi2_select_slave();
+        uint8_t data;
+        bool receive_flag = true;
+        if(!b_spi.empty()){
+            data = b_spi.get();
+            switch (state){
+                case idle:
+                    usart_send_blocking(USART2,'2'); 
+                    if (data == 36){
+                        state = data_receive;
+                    }
+                    break;
+                case data_receive:
+                    usart_send_blocking(USART2,'3'); 
+                    if (data == 59){
+                        state = finish;
+                    }
+                    else{
+                        // usart_send_blocking(USART2, data); 
+                    }
+
+                    break;
+                case finish:
+                    usart_send_blocking(USART2,'4'); 
+                    usart_send_blocking(USART2,'\n'); 
+                    spi2_deselect_slave();
+                    state = idle;
+                    delay_ms(1000);
+                    break;
+                default:
+                    state = idle;
+                    break;
+            }
+        }
+        
+        // // Отправляем данные записанные в буфер
+        // while (!b.empty()){
+        //     usart_send_blocking(USART2, b.get()); 
         // }
+        
+        
+
     }
     
     return 0;

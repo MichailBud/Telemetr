@@ -8,16 +8,18 @@ public:
 	uint8_t get();
 	uint8_t get_rd();
 	uint8_t get_wr();
-	uint8_t count;
+	
 	bool empty();
 	bool full();
-	uint8_t wr_idx;
-	uint8_t rd_idx;
+	
 	Circular_buffer(); // Circular_buffer b1;
 	Circular_buffer(uint8_t); // Circular_buffer b2(128);
 	uint8_t buf[SIZE]; // Противоречит конструктору с пармаетрами
-		bool full_;
+		
 private:
+	uint8_t wr_idx;
+	uint8_t rd_idx;
+	bool full_;
 };
 
 

@@ -6,10 +6,6 @@ void Circular_buffer::put(uint8_t d){
 	wr_idx ++;
 	wr_idx %= SIZE;
 	if(wr_idx == rd_idx) full_ = true;
-
-	count = (count%6)+1;
-
-
 }
 
   
