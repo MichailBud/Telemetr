@@ -161,6 +161,7 @@ void spi2_isr(void)
         usart_send_blocking(USART2, received_data);
     }
 }
+
 // Функция для передачи данных через SPI2
 uint8_t spi2_transfer()
 {
@@ -243,11 +244,8 @@ int main(void)
     State state = idle;
     
     while (1) {
-        spi_send(SPI2, 'A');
-        spi_send(SPI2, 'B');
-        spi_send(SPI2, 'C');
-        spi_send(SPI2, 'D');
-        delay_ms(100);
+        spi_xfer(SPI2, 0b10101010); // 0xFF обычно используется для чтения
+
     }
     
     return 0;

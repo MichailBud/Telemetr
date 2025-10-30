@@ -55,6 +55,7 @@ void clock_setup(void)
     rcc_clock_setup_pll(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_168MHZ]);
 
     // Включаем тактирование для GPIOA, GPIOB и USART1, USART2
+    rcc_periph_clock_enable(RCC_GPIOD); // Включаем групппу портов ввода вывода D
     rcc_periph_clock_enable(RCC_GPIOA);
     rcc_periph_clock_enable(RCC_GPIOB);
     rcc_periph_clock_enable(RCC_USART3);
@@ -64,6 +65,10 @@ void clock_setup(void)
 
 void gpio_setup(void)
 {
+        
+
+    gpio_mode_setup(GPIOD, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO15); // Активируем 15 вывод в режиме альтернативной функции
+
     // PA0 и PA1 как выходы (Output)
     gpio_mode_setup(GPIOA, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO0 | GPIO1);
     
@@ -218,7 +223,7 @@ void uart3_write(uint8_t* data, const uint32_t length ){
 	}
 }
 
-void config_radiomodule(void){
+void config_radiomodule(void){ // Конфигурация радиомодуля (100% рабочая)
     gpio_set(GPIOA, GPIO0);
 	gpio_set(GPIOA, GPIO1);
     
@@ -251,42 +256,50 @@ int main(void)
     
     while (1) {
         
+        if (gpio_get(GPIOA, GPIO8)){
+            gpio_set(GPIOD, GPIO15);
+        }
+        else{
+            gpio_clear(GPIOD, GPIO15);
+        }
+
+        usart_send_blocking(USART2,'1'); 
 
         // usart_send_blocking(USART2,'1'); 
 
-        spi2_select_slave();
-        uint8_t data;
-        bool receive_flag = true;
-        if(!b_spi.empty()){
-            data = b_spi.get();
-            switch (state){
-                case idle:
-                    usart_send_blocking(USART2,'2'); 
-                    if (data == 36){
-                        state = data_receive;
-                    }
-                    break;
-                case data_receive:
-                    usart_send_blocking(USART2,'3'); 
-                    if (data == 59){
-                        state = finish;
-                    }
-                    else{
-                        // usart_send_blocking(USART2, data); 
-                    }
+        // spi2_select_slave();
+        // uint8_t data;
+        // bool receive_flag = true;
+        // if(!b_spi.empty()){
+        //     data = b_spi.get();
+        //     switch (state){
+        //         case idle:
+        //             usart_send_blocking(USART2,'2'); 
+        //             if (data == 36){
+        //                 state = data_receive;
+        //             }
+        //             break;
+        //         case data_receive:
+        //             usart_send_blocking(USART2,'3'); 
+        //             if (data == 59){
+        //                 state = finish;
+        //             }
+        //             else{
+        //                 // usart_send_blocking(USART2, data); 
+        //             }
 
-                    break;
-                case finish:
-                    usart_send_blocking(USART2,'4'); 
-                    usart_send_blocking(USART2,'\n'); 
-                    spi2_deselect_slave();
-                    state = idle;
-                    delay_ms(1000);
-                    break;
-                default:
-                    state = idle;
-                    break;
-            }
+        //             break;
+        //         case finish:
+        //             usart_send_blocking(USART2,'4'); 
+        //             usart_send_blocking(USART2,'\n'); 
+        //             spi2_deselect_slave();
+        //             state = idle;
+        //             delay_ms(1000);
+        //             break;
+        //         default:
+        //             state = idle;
+        //             break;
+        //     }
         }
         
         // // Отправляем данные записанные в буфер
@@ -296,7 +309,7 @@ int main(void)
         
         
 
-    }
+    // }
     
     return 0;
 }
