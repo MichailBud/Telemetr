@@ -25,7 +25,7 @@ volatile uint32_t tiks = 0;
 void delay_us(uint32_t us) {
     uint32_t start = systick_get_value();
     // Расчет тактов для указанного времени (72 тактов = 1 мкс при 72 МГц)
-    uint32_t ticks = us * 72;
+    uint32_t ticks = us * 84;
     while ((start - systick_get_value()) < ticks) {
         // Ждем, пока не пройдет нужное количество тактов
     }
@@ -43,7 +43,7 @@ void sys_tick_handler(void) { // функция обработчик-преры�
 }
 
 void systick_setup(void) {
-    systick_set_frequency(1000, 72000000);
+    systick_set_frequency(1000, 16000000);
     systick_counter_enable();
     systick_interrupt_enable();
 }
@@ -52,17 +52,17 @@ void config_radiomodule(void) { // Конфигурация радиомодул
     gpio_set(GPIOA, GPIO0);
     gpio_set(GPIOA, GPIO1);
     
-    delay_ms(200);
+    delay_ms(1000);
 
-    uint8_t str_tx[] = {0xC0, 0x00, 0x00, 0x1A, 0x06, 0x44}; // Настройка для радиомодуля
+    uint8_t str_tx[] = {0xC0, 0x00, 0x00, 0x1D, 0x06, 0x44}; // Настройка для радиомодуля
     uart2_write(str_tx, 6); // Записываем конфигурацию в радиомодуль
 
-    delay_ms(200);
+    delay_ms(1000);
 
     gpio_clear(GPIOA, GPIO0);
     gpio_clear(GPIOA, GPIO1);
 
-    delay_ms(200);
+    delay_ms(1000);
 }
 
 void usart2_isr(void) {
@@ -76,7 +76,7 @@ void usart2_isr(void) {
         usart_send_blocking(USART3, data);
         
         // Сохраняем данные в буфер
-        b.put(data);
+        //b.put(data);
     }
 }
 
@@ -86,7 +86,6 @@ void spi2_isr(void) {
     if (SPI_SR(SPI2) & SPI_SR_RXNE) {
         uint8_t received_data = spi_read(SPI2);
         // Отправляем эхо в USART2 для отладки
-        usart_send_blocking(USART2, received_data);
         b_spi.put(received_data);
     }
 }
@@ -103,6 +102,8 @@ int main(void) {
     config_radiomodule();
     
     State state = idle;
+
+    spi2_select_slave();
     
     while (1) {
         // Индикация состояния PA8
@@ -113,48 +114,52 @@ int main(void) {
         }
         
         // Отправка тестового сообщения
-        uint8_t str_tx[] = {'H', 'E', 'L', 'L', 'O'};
-        uart2_write(str_tx, 5);
-        delay_ms(1000);
+        spi_send(SPI2, 0xAA);
 
-        // Обработка данных из SPI (раскомментируйте при необходимости)
-        /*
-        spi2_select_slave();
-        if(!b_spi.empty()) {
+        while (!b_spi.empty()){
             uint8_t data = b_spi.get();
             switch (state) {
                 case idle:
-                    usart_send_blocking(USART2, '2'); 
-                    if (data == 36) { // '$'
+                    if (data == '$') { // '$'
                         state = data_receive;
+                        usart_send_blocking(USART3, '$'); 
+                        usart_send_blocking(USART2, '$'); 
                     }
                     break;
                 case data_receive:
-                    usart_send_blocking(USART2, '3'); 
-                    if (data == 59) { // ';'
+                    if (data == ';') { // ';'
+                        //spi2_deselect_slave();
+                        usart_send_blocking(USART3, '*'); 
+                        usart_send_blocking(USART2, '$'); 
                         state = finish;
                     } else {
-                        // usart_send_blocking(USART2, data); 
+                        usart_send_blocking(USART3, data); 
+                        usart_send_blocking(USART2, data); 
                     }
                     break;
                 case finish:
-                    usart_send_blocking(USART2, '4'); 
-                    usart_send_blocking(USART2, '\n'); 
                     spi2_deselect_slave();
+                    usart_send_blocking(USART3, '\r'); 
+                    usart_send_blocking(USART3, '\n'); 
                     state = idle;
-                    delay_ms(1000);
+                    delay_ms(5000);
+                    spi2_select_slave();
                     break;
                 default:
                     state = idle;
                     break;
             }
         }
+        // Обработка данных из SPI (раскомментируйте при необходимости)
+        /*
+        spi2_select_slave();
+        
         */
         
-        // Отправляем данные записанные в буфер USART2
-        while (!b.empty()) {
-            usart_send_blocking(USART3, b.get()); 
-        }
+        // // Отправляем данные записанные в буфер USART2
+        // while (!b.empty()) {
+        //     usart_send_blocking(USART3, b.get()); 
+        // }
     }
     
     return 0;

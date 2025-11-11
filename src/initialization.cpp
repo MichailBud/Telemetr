@@ -56,7 +56,7 @@ void gpio_setup(void) {
 
 void usart_setup(void) {
     // Настройка USART3
-    usart_set_baudrate(USART3, 9600);
+    usart_set_baudrate(USART3, 115200);
     usart_set_databits(USART3, 8);
     usart_set_stopbits(USART3, USART_STOPBITS_1);
     usart_set_mode(USART3, USART_MODE_TX_RX);
@@ -67,7 +67,7 @@ void usart_setup(void) {
     usart_enable(USART3);
     
     // Настройка USART2
-    usart_set_baudrate(USART2, 9600);
+    usart_set_baudrate(USART2, 115200);
     usart_set_databits(USART2, 8);
     usart_set_stopbits(USART2, USART_STOPBITS_1);
     usart_set_mode(USART2, USART_MODE_TX_RX);
@@ -87,7 +87,7 @@ void spi2_setup(void) {  // Настройка SPI2
     
     // Базовая настройка SPI
     spi_init_master(SPI2,
-                   SPI_CR1_BAUDRATE_FPCLK_DIV_32,    // Предделитель (42MHz/32 = ~1.3MHz)
+                   SPI_CR1_BAUDRATE_FPCLK_DIV_256,    // Предделитель (42MHz/32 = ~1.3MHz)
                    SPI_CR1_CPOL_CLK_TO_0_WHEN_IDLE,  // Полярность: низкий уровень в idle
                    SPI_CR1_CPHA_CLK_TRANSITION_1,    // Фаза: данные захватываются по первому фронту
                    SPI_CR1_DFF_8BIT,                 // 8-битный формат данных

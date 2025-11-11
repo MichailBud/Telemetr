@@ -2,6 +2,7 @@ message(STATUS "\tSources")
 
 
 add_executable(${CMAKE_PROJECT_NAME}
+    # elprivod.cpp
     main.cpp
     functions.cpp
     initialization.cpp

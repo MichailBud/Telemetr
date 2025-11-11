@@ -36,7 +36,7 @@ void uart3_write(uint8_t* data, const uint32_t length );
 char* reverse(char* buffer, int i, int j);
 
 
-void spi2_select_slave(void);
+void spi2_select_slave(void); // Выбор slave устройства
 
 // Функция для освобождения ведомого устройства
 void spi2_deselect_slave(void);
